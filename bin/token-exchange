@@ -48,10 +48,17 @@ handle_request() {
   req_log=$(mktemp)
   printf "HTTP/1.1 200 OK\r\nContent-Length: 17\r\n\r\nRedirect complete" |
     socat openssl-listen:$PORT,cert=$CERT_FILE,key=$KEY_FILE,reuseaddr,verify=0 - > $req_log
-  # echo 'Request logged to:' $req_log
-  CODE=$(grep -oP '(?<=code=)[^&]*' $req_log)
-  echo "OAuth Code: $CODE"
-  rm $req_log
+
+  CODE=$(sed -n 's/.*[?&]code=\([^&]*\).*/\1/p' $req_log)
+
+  if [ -z $CODE ]; then
+    echo "Failed to parse code parameter from request. Logged request:"
+    cat  $req_log
+    exit 1
+  else
+    echo "OAuth Code: $CODE"
+    rm $req_log
+  fi
 }
 
 read_token() {
@@ -92,6 +99,6 @@ ensure_certs
 echo "Waiting for OAuth redirect to ${SLACK_REDIRECT_URI}"
 echo "To start the OAuth flow, visit shareable Slack app URL (provided by App owner)"
 handle_request
-exchange_code
+# exchange_code
 
 
