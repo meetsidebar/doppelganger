@@ -20,6 +20,8 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+const TAG_INSTRUCTION = "If you want to tag a user from the conversation, use the syntax <@USER_ID>.";
+
 async function generateChatGPTResponse(context: string): Promise<string | null> {
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -27,10 +29,10 @@ async function generateChatGPTResponse(context: string): Promise<string | null> 
             { role: 'system', content: `You are a ${ROLE}. A real team member.` },
             {
                 role: 'assistant', content: `
-        Respond with a slack message response suitable to the entire conversation.
+        Respond with a slack message response that fits the entire conversation.
+        Pay attention to any asks of you or questions that aren't adequately answered. Prioritize more recent messages.
         Don't explain that you'll respond, simply respond as if you were in the Slack conversation.
-        Avoid overly generic, customer-support like prompts; you're discussing among peers.
-        If you want to tag a user from the conversation, use the syntax <@USER_ID>.
+        Avoid overly generic responses. Be professional, yet casual. Don't be robotic. You're discussing with peers.
         If the conversation has reached a natural end, reply with only one word: end.
       `.trim().replace(/ +/g, ' ')
             },
@@ -64,12 +66,13 @@ app.message(async ({ message, say }) => {
     if (message.channel_type == 'im') {
         /// Prompt for IMs
         const context = await getLlmContext(message.channel);
-        prompt = "Here are the most recent messages in a Slack DM.\n" + context;
+        prompt = [TAG_INSTRUCTION, "Here are the most recent messages in a Slack DM.", context].join("\n");
     } else if (userId && isTextMessage(message)) {
         if (message.text.includes(`<@${userId}>`)) {
             /// Prompt for mentions
             const context = await getLlmContext(message.channel);
             prompt = [
+                TAG_INSTRUCTION,
                 "Here are the most recent messages in a Slack channel.",
                 context,
                 "You were mentioned in this message:",
@@ -81,14 +84,17 @@ app.message(async ({ message, say }) => {
         const response = await generateChatGPTResponse(prompt);
         const delayTime = getRandomDelay(15, 300);
         const friendlyTime = `${Math.round(delayTime / 1000)}s`;
-        console.log(`Responding in ${friendlyTime}: `, response);
         if (response) {
+            console.log(`responding in ${friendlyTime}.\n${response}`);
             await delay(delayTime);
             await say(response);
+        } else {
+            console.log('    no response needed...')
         }
     } else {
-        console.log("    ignoring...");
+        console.log("  ignoring...");
     }
+    console.log("")
 });
 
 async function postInRandomChannel(channel_type = 'public_channel') {
@@ -109,36 +115,41 @@ async function postInRandomChannel(channel_type = 'public_channel') {
         const filteredChannels = channels.filter(filter);
         const channel = filteredChannels[Math.floor(Math.random() * filteredChannels.length)];
         if (channel && channel.id) {
-            console.log(`Preparing to post in ${channel_type}: ${channel.name}`);
+            const user = active_users?.find((u) => u.id === channel.user);
+            const friendly_name = (channel_type === 'im')
+                ? user?.real_name
+                : channel.name;
+            console.log(`Preparing to post in ${channel_type}: ${friendly_name}`);
             const context = await getLlmContext(channel.id)
 
-            const user = active_users?.find((u) => u.id === channel.user);
-            const prompt = channel_type === 'im'
+            const prompt = (channel_type === 'im')
                 ? im_prompt(context, user?.real_name ?? 'Unknown')
                 : channel_prompt(context, channel.name ?? 'Unknown');
 
             const response = await generateChatGPTResponse(prompt);
-            console.log(`Interval post to ${channel_type}: ${channel.name}:\n\t`, response);
             if (response) {
+                console.log(`Interval post to ${channel_type}: ${channel.name}\n${response}`);
                 await app.client.chat.postMessage({
-                    token: process.env.SLACK_BOT_TOKEN,
                     channel: channel.id,
                     text: response,
                 });
+            } else {
+                console.log("Not making any post this interval.")
             }
         } else {
             console.log('No channels (or all filtered):', channels)
         }
     }
+    console.log("")
 }
 
 function im_prompt(context: string, user: string): string {
     let prompt;
     if (context.length) {
-        prompt = `You have no conversation history with ${user}. Start a new conversation which may or may not be work-related. It's a DM, so don't bother tagging them.`
+        prompt = `You have no conversation history with ${user}. Start a new conversation which may or may not be work-related.`
     } else {
         prompt = [
-            `Here are the most recent messages in a DM with ${user}. Start a new conversation which may or may not related to these messages. It's a DM, so don't bother tagging them.`,
+            `Here are the most recent messages in a DM with ${user}. Continue the existing conversation or start new conversation.`,
             context
         ].join("\n");
     }
@@ -151,9 +162,10 @@ function channel_prompt(context: string, channel: string): string {
         prompt = `Start a new conversation suitable for channel #${channel}.`
     } else {
         prompt = [
+            TAG_INSTRUCTION,
             `Here are the most recent messages in a public Slack channel #${channel}.`,
             context,
-            `Start a new conversation suitable to the channel which may or may not related to these messages.`
+            `Continue the existing conversation or start new conversation.`
         ].join("\n");
     }
     return prompt;
