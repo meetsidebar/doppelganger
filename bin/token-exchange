@@ -1,0 +1,97 @@
+#!/bin/bash
+#
+# This script
+# 1. Starts a self-signed socat server to listen for one request
+# 2. Captures the code parameter from the request
+# 3. Exchanges the OAuth code parameter for an access token
+# 4. Stores the access token in .env
+
+
+# Load variables from .env file
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+else
+  echo ".env file not found!"
+  exit 1
+fi
+
+# Check if the required variables are set
+if [ -z "$SLACK_CLIENT_ID" ] || [ -z "$SLACK_CLIENT_SECRET" ] || [ -z "$SLACK_REDIRECT_URI" ]; then
+  echo "SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI must be set in the .env file."
+  exit 1
+fi
+
+if ! command -v nc >/dev/null 2>&1; then
+  echo "Netcat (nc) is required but not installed. Aborting."
+  exit 1
+fi
+
+PORT=${SLACK_REDIRECT_URI##*:}
+PORT=${PORT%%/*}
+PORT=${PORT:-443}
+CERT_FILE=cert.pem
+KEY_FILE=key.pem
+
+ensure_certs() {
+  # Check if the certificate and key files exist
+  if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+    echo "Certificate or key file not found. Generating new certificate and key..."
+    openssl req -x509 -newkey rsa:4096 -keyout "$KEY_FILE" -out "$CERT_FILE" -days 365 -nodes -subj "/CN=localhost"
+    if [ $? -ne 0 ]; then
+      echo "Failed to generate certificate and key. Exiting."
+      exit 1
+    fi
+  fi
+}
+
+handle_request() {
+  req_log=$(mktemp)
+  printf "HTTP/1.1 200 OK\r\nContent-Length: 17\r\n\r\nRedirect complete" |
+    socat openssl-listen:$PORT,cert=$CERT_FILE,key=$KEY_FILE,reuseaddr,verify=0 - > $req_log
+  # echo 'Request logged to:' $req_log
+  CODE=$(grep -oP '(?<=code=)[^&]*' $req_log)
+  echo "OAuth Code: $CODE"
+  rm $req_log
+}
+
+read_token() {
+  # Prompt for the authorization code
+  read -p "Enter the authorization code: " CODE
+}
+
+function exchange_code() {
+  # Make the POST request to exchange the code for an access token
+  RESPONSE=$(curl -s -X POST https://slack.com/api/oauth.v2.access \
+    -d client_id="$SLACK_CLIENT_ID" \
+    -d client_secret="$SLACK_CLIENT_SECRET" \
+    -d code="$CODE" \
+    -d redirect_uri="$SLACK_REDIRECT_URI")
+
+
+  # Parse the access token from the response
+  USER_TOKEN=$(echo $RESPONSE | jq -r '.authed_user.access_token // ""')
+  BOT_TOKEN=$(echo $RESPONSE | jq -r '.access_token // ""')
+
+  # Check if the access token was successfully obtained
+  if [ -n "$USER_TOKEN" ]; then
+    echo $RESPONSE | jq '{
+      user_token: .authed_user.access_token,
+      user_scopes: .authed_user.scope,
+      bot_token: .access_token,
+      bot_scopes: .scope
+    }'
+    sed -i'' -e "/^SLACK_USER_TOKEN=/s/=.*/=\"${USER_TOKEN}\"/" .env
+    echo "Updated .env"
+  else
+    echo "Failed to obtain access token. Response from Slack"
+    echo $RESPONSE | jq '.'
+  fi
+}
+
+ensure_certs
+echo "Waiting for OAuth redirect to ${SLACK_REDIRECT_URI}"
+echo "To start the OAuth flow, visit shareable Slack app URL (provided by App owner)"
+handle_request
+exchange_code
+
+
