@@ -12,14 +12,13 @@ Currently supports
 
 Coming soon: bootstrap script. Until then:
 
-- Install `pnpm`
-- Install `socat`
-- Install [jq](https://jqlang.github.io/jq/)
+- Install `pnpm`, `socat`, [jq](https://jqlang.github.io/jq/)
 - `cp .env.sample .env`
+- Update variables in `.env`
 
 #### OpenAI
 
-Get your token from [platform.openai.com](https://platform.openai.com)
+Get your token from [platform.openai.com](https://platform.openai.com).
 
 #### Slack
 
@@ -32,7 +31,7 @@ Get your `SLACK_USER_TOKEN` token by:
 - You may have to accept/ignore the self-signed cert on redirect
 - Once redirect completes, confirm that your `SLACK_USER_TOKEN` is stored in `.env`
 
-[token-exchange](blob/main/bin/token-exchange) captures the oauth redirect and requests an oauth token for you.
+[token-exchange](bin/token-exchange) captures the oauth redirect and requests an oauth token for you.
 
 ## Running Doppelganger
 
@@ -44,12 +43,12 @@ Then run:
 pnpm start
 ```
 
-#### Slack App Configuration
+## Slack App Configuration
 
 If you're creating a new slack app:
 
 - Enable **Socket Mode**
-- **Scopes**: `{channels, groups, im, mpim}:{history, read}` and `chat.write`
+- **Scopes**: `{channels, groups, im, mpim}:{history, read}`, `users:read` and `chat:write`
 - **Event Subscriptions**: `message.im`, `message.channels`, `message.groups`, `message.mpim`
-- Set redirect URL to `https://localhost`
+- Set redirect URL (e.g. `https://localhost:3000`)
 - Ensure app is "installed" after making any changes
