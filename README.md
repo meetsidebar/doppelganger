@@ -43,6 +43,9 @@ Then run:
 pnpm start
 ```
 
+If you want to run multiple doppelgangers on the same machine, create multiple `.env.NAME` files.
+Give each a unique `SLACK_USER_TOKEN` and add a unique `PORT`. Then run `pnpm start NAME`.
+
 ## Slack App Configuration
 
 If you're creating a new slack app:

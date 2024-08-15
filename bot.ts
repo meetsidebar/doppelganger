@@ -2,7 +2,10 @@ import { App, LogLevel, GenericMessageEvent } from '@slack/bolt';
 import OpenAI from 'openai';
 import * as dotenv from 'dotenv';
 
-dotenv.config();
+const whoami= process.argv[2];
+const dotenv_path = whoami ? `.env.${whoami}` : '.env'
+
+dotenv.config({ path: dotenv_path });
 
 const ROLE = process.env.ROLE || 'software developer';
 
@@ -67,8 +70,8 @@ app.message(async ({ message, say }) => {
         /// Prompt for IMs
         const context = await getLlmContext(message.channel);
         prompt = [TAG_INSTRUCTION, "Here are the most recent messages in a Slack DM.", context].join("\n");
-    } else if (userId && isTextMessage(message)) {
-        if (message.text.includes(`<@${userId}>`)) {
+    } else if (my_user_id && isTextMessage(message)) {
+        if (message.text.includes(`<@${my_user_id}>`)) {
             /// Prompt for mentions
             const context = await getLlmContext(message.channel);
             prompt = [
@@ -108,7 +111,7 @@ async function postInRandomChannel(channel_type = 'public_channel') {
     const active_users = users?.filter(user => !user.deleted && !user.is_bot && user.id !== 'USLACKBOT' && user.is_email_confirmed) ?? [];
     const active_user_ids = active_users.map(u => u.id)
     const filter = channel_type === "im"
-        ? (c: any) => !c.is_user_deleted && !c.is_archived && active_user_ids.includes(c.user) && c.user !== userId
+        ? (c: any) => !c.is_user_deleted && !c.is_archived && active_user_ids.includes(c.user) && c.user !== my_user_id
         : (c: any) => c.is_member && !c.is_archived
 
     if (channels?.length) {
@@ -189,9 +192,9 @@ setInterval(() => postInRandomChannel('public_channel'), 1 * 60 * 60 * 1000);
 // Send a DM to a random active user every 3 hours
 setInterval(() => postInRandomChannel('im'), 3 * 60 * 60 * 1000);
 
-let userId: string | null;
+let my_user_id: string | null;
 (async () => {
-    userId = await getUserId(app);
+    my_user_id = await getUserId(app);
     await app.start(process.env.PORT || 3000);
     console.log('⚡️ Slack bot is running!');
 

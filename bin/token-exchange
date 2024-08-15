@@ -21,8 +21,8 @@ if [ -z "$SLACK_CLIENT_ID" ] || [ -z "$SLACK_CLIENT_SECRET" ] || [ -z "$SLACK_RE
   exit 1
 fi
 
-if ! command -v nc >/dev/null 2>&1; then
-  echo "Netcat (nc) is required but not installed. Aborting."
+if ! command -v socat >/dev/null 2>&1; then
+  echo "socat is required but not installed. Aborting."
   exit 1
 fi
 
@@ -99,6 +99,6 @@ ensure_certs
 echo "Waiting for OAuth redirect to ${SLACK_REDIRECT_URI}"
 echo "To start the OAuth flow, visit shareable Slack app URL (provided by App owner)"
 handle_request
-# exchange_code
+exchange_code
 
 
